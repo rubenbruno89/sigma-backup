@@ -11,7 +11,7 @@
     <style>
         body { background-color: #121418; }
         .card { background-color: #1b1f24; border: 1px solid #2b3036; }
-        .url-cell { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .url-cell { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style>
 </head>
 <body>
@@ -47,6 +47,12 @@
                         <div class="mb-3">
                             <label class="form-label form-label-sm">Nome do Cliente *</label>
                             <input type="text" id="nome" class="form-control" placeholder="Ex: João Silva" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label form-label-sm">Nome do Provedor *</label>
+                            <input type="text" id="provedor" class="form-control" list="providerSuggestions" placeholder="Ex: Sigma, UniTV, Servidor X..." required>
+                            <datalist id="providerSuggestions"></datalist>
                         </div>
 
                         <div class="mb-3">
@@ -140,7 +146,7 @@
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <span class="fw-bold"><i class="bi bi-people"></i> Clientes no Banco Atual</span>
                     <div class="d-flex gap-2">
-                        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Buscar cliente..." onkeyup="renderTable()">
+                        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Buscar cliente ou provedor..." onkeyup="renderTable()">
                         <button class="btn btn-sm btn-outline-danger" onclick="clearAll()" title="Limpar todo o banco">
                             <i class="bi bi-trash3"></i>
                         </button>
@@ -151,6 +157,7 @@
                         <thead class="table-active">
                             <tr>
                                 <th>Nome</th>
+                                <th>Provedor</th>
                                 <th>WhatsApp</th>
                                 <th>Vencimento</th>
                                 <th>URL / Dados</th>
@@ -182,6 +189,7 @@
 
         const id = document.getElementById('clientId').value;
         const nome = document.getElementById('nome').value.trim();
+        const provedor = document.getElementById('provedor').value.trim();
         const whatsapp = document.getElementById('whatsapp').value.replace(/\D/g, '');
         const vencimento = document.getElementById('vencimento').value;
         const urlDados = document.getElementById('urlDados').value.trim();
@@ -189,12 +197,13 @@
         if (id) {
             const index = clients.findIndex(c => c.id === id);
             if (index !== -1) {
-                clients[index] = { ...clients[index], nome, whatsapp, vencimento, urlDados, updatedAt: new Date().toISOString() };
+                clients[index] = { ...clients[index], nome, provedor, whatsapp, vencimento, urlDados, updatedAt: new Date().toISOString() };
             }
         } else {
             clients.push({
                 id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
                 nome,
+                provedor,
                 whatsapp,
                 vencimento,
                 urlDados,
@@ -206,38 +215,51 @@
         resetForm();
     });
 
+    // Atualiza sugestões de provedores já cadastrados
+    function updateProviderSuggestions() {
+        const datalist = document.getElementById('providerSuggestions');
+        const uniqueProviders = [...new Set(clients.map(c => (c.provedor || '').trim()).filter(Boolean))].sort();
+        datalist.innerHTML = uniqueProviders.map(p => `<option value="${escapeHTML(p)}">`).join('');
+    }
+
     // Renderização da Tabela
     function renderTable() {
         const tbody = document.getElementById('clientTableBody');
         const search = document.getElementById('searchInput').value.toLowerCase();
         document.getElementById('clientCount').innerText = `${clients.length} cliente(s)`;
 
+        updateProviderSuggestions();
         tbody.innerHTML = '';
 
         const filtered = clients.filter(c => 
-            c.nome.toLowerCase().includes(search) || 
-            c.whatsapp.includes(search) ||
-            c.urlDados.toLowerCase().includes(search)
+            (c.nome || '').toLowerCase().includes(search) || 
+            (c.provedor || '').toLowerCase().includes(search) ||
+            (c.whatsapp || '').includes(search) ||
+            (c.urlDados || '').toLowerCase().includes(search)
         );
 
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-4">Nenhum cliente cadastrado ou encontrado.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-secondary py-4">Nenhum cliente cadastrado ou encontrado.</td></tr>`;
             return;
         }
 
         filtered.forEach(c => {
             const statusBadge = getExpirationBadge(c.vencimento);
-            const dataFormatada = c.vencimento.split('-').reverse().join('/');
+            const dataFormatada = c.vencimento ? c.vencimento.split('-').reverse().join('/') : '-';
+            const provedorHtml = c.provedor 
+                ? `<span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">${escapeHTML(c.provedor)}</span>`
+                : `<span class="text-secondary">-</span>`;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="fw-semibold">${escapeHTML(c.nome)}</td>
-                <td>
+                <td>${provedorHtml}</td>
+                <td class="text-nowrap">
                     <a href="https://wa.me/${c.whatsapp}" target="_blank" class="text-success text-decoration-none">
-                        <i class="bi bi-whatsapp"></i> ${c.whatsapp}
+                        <i class="bi bi-whatsapp"></i> ${escapeHTML(c.whatsapp)}
                     </a>
                 </td>
-                <td>${dataFormatada} ${statusBadge}</td>
+                <td class="text-nowrap">${dataFormatada} ${statusBadge}</td>
                 <td class="url-cell" title="${escapeHTML(c.urlDados)}">
                     <button class="btn btn-sm btn-outline-secondary me-1" onclick="copyText('${escapeJS(c.urlDados)}')" title="Copiar URL">
                         <i class="bi bi-clipboard"></i>
@@ -258,6 +280,7 @@
     }
 
     function getExpirationBadge(dateStr) {
+        if (!dateStr) return '';
         const today = new Date();
         today.setHours(0,0,0,0);
         const expDate = new Date(dateStr + "T00:00:00");
@@ -273,10 +296,11 @@
         if (!client) return;
 
         document.getElementById('clientId').value = client.id;
-        document.getElementById('nome').value = client.nome;
-        document.getElementById('whatsapp').value = client.whatsapp;
-        document.getElementById('vencimento').value = client.vencimento;
-        document.getElementById('urlDados').value = client.urlDados;
+        document.getElementById('nome').value = client.nome || '';
+        document.getElementById('provedor').value = client.provedor || '';
+        document.getElementById('whatsapp').value = client.whatsapp || '';
+        document.getElementById('vencimento').value = client.vencimento || '';
+        document.getElementById('urlDados').value = client.urlDados || '';
 
         document.getElementById('formTitle').innerText = 'Editar Cliente';
         document.getElementById('btnCancelEdit').classList.remove('d-none');
@@ -312,7 +336,7 @@
     function generateBDBlob() {
         const backupPayload = {
             app: "SigmaBackupManager",
-            version: "1.1",
+            version: "1.2",
             exportedAt: new Date().toISOString(),
             totalClients: clients.length,
             data: clients
@@ -381,9 +405,6 @@
     // TRANSPORTE RÁPIDO 100% HTML PURO (SEM SERVIDOR / SEM ERRO DE CORS)
     // =========================================================================
 
-    /**
-     * OPÇÃO 1: Envio nativo para temp.sh usando DataTransfer + HTML Form POST.
-     */
     function uploadTempShNative() {
         if (clients.length === 0) {
             return showStatus('Lista vazia! Adicione clientes antes de enviar para o temp.sh.', 'warning');
@@ -396,12 +417,10 @@
             const fileName = getFileName();
             const file = new File([blob], fileName, { type: 'application/octet-stream' });
 
-            // Injeta o arquivo .bd gerado dentro do <input type="file"> oculto
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             document.getElementById('nativeTempShInput').files = dataTransfer.files;
 
-            // Abre mini-janela centralizada para exibir o link retornado pelo temp.sh
             const w = 580, h = 220;
             const left = Math.max(0, (window.screen.width - w) / 2);
             const top = Math.max(0, (window.screen.height - h) / 2);
@@ -444,10 +463,6 @@
         }
     }
 
-    /**
-     * OPÇÃO 2 (ALTERNATIVA): APIs com CORS liberado nativamente no navegador.
-     * Tenta TmpFiles.org e possui fallback automático para File.io.
-     */
     async function uploadAlternative() {
         if (clients.length === 0) {
             return showStatus('Lista vazia! Adicione clientes antes de enviar.', 'warning');
@@ -461,7 +476,6 @@
         const fileName = getFileName();
 
         try {
-            // Tentativa 1: TmpFiles.org
             const formData = new FormData();
             formData.append('file', blob, fileName);
 
@@ -484,7 +498,6 @@
         } catch (err1) {
             console.warn('TmpFiles falhou, acionando fallback File.io...', err1);
 
-            // Tentativa 2 (Fallback automático): File.io
             try {
                 const formData2 = new FormData();
                 formData2.append('file', blob, fileName);
@@ -552,11 +565,11 @@
     }
 
     function escapeHTML(str) {
-        return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
+        return String(str || '').replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
     }
 
     function escapeJS(str) {
-        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n');
     }
 </script>
 </body>
